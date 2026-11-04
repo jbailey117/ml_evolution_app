@@ -14,7 +14,8 @@ from PySide6.QtGui import (
     QPixmap,
     QFont,
     QAction,
-    QPainter
+    QPainter,
+    QResizeEvent
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from .widgets import (
@@ -37,6 +38,8 @@ class MainWindow(QMainWindow):
         self.model:keras.models.Sequential = keras.Sequential(layers=[
             keras.layers.Input(shape=(8,)),
             keras.layers.Dense(units=8, activation='relu'),
+            keras.layers.Dense(units=8, activation='relu'),
+            keras.layers.Dense(units=8, activation='relu'),
             keras.layers.Dense(units=1, activation='leaky_relu'),
         ])
         self.env, self.map, self.scene, self.view = self.initialize_graphics()
@@ -47,13 +50,11 @@ class MainWindow(QMainWindow):
         self.dataframes:dict[str, pd.DataFrame] = dict()
 
         self.initialize_menu()
-        self.env.init_sim()
 
     def initialize_graphics(self) -> tuple[EvolutionEnvironmentGUI, QGraphicsPixmapItem, QGraphicsScene, QGraphicsView]:
         map = QGraphicsPixmapItem()
         map.setPos(0,0)
 
-        env = EvolutionEnvironmentGUI(map, self.maximumSize(), self.model, np.array([0, 0]), np.array([0, 0]), min_org=4)
 
         view = QGraphicsView()
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -62,6 +63,8 @@ class MainWindow(QMainWindow):
         #view.setViewport(QOpenGLWidget())
         view.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         view.setViewportMargins(0,0,0,0)
+
+        env = EvolutionEnvironmentGUI(map, view, self.maximumSize(), self.model, np.array([1, 2]), np.array([1, 2]), min_org=8)
 
         scene = QGraphicsScene()
         view.setScene(scene)
@@ -105,33 +108,14 @@ class MainWindow(QMainWindow):
         export_model = QAction('Export Model', self)
         export_model.triggered.connect(self.export_model)
         file_menu.addAction(export_model)
+        file_menu.addSeparator()
 
         file_menu.setFont(subfont)
 
-        ### config section of menubar ###
-        ###############################
-
-        config_menu = menu.addMenu('&Configure')
-
-        ## Data settings ##
-        data_settings_menu = config_menu.addMenu('&Data Settings')
-
-        # Normalize data
-        normalize_data = data_settings_menu.addMenu('&Normalize Data')
-        yes = QAction('Yes', self)
-        yes.triggered.connect(lambda: self.set_normalize(True))
-        no = QAction('No', self)
-        no.triggered.connect(lambda: self.set_normalize(False))
-        normalize_data.addAction(yes)
-        normalize_data.addSeparator()
-        normalize_data.addAction(no)
-        normalize_data.setFont(subfont)
-
-        # 
-
-
-
-        config_menu.setFont(subfont)
+        # start evolution
+        start_env = QAction('Start', self)
+        start_env.triggered.connect(self.start_env)
+        file_menu.addAction(start_env)
 
     def new(self) -> None:
         print("creating new instance")
@@ -150,8 +134,13 @@ class MainWindow(QMainWindow):
     def export_model(self) -> None:
         print("exporting model....")
 
-    def set_normalize(self, normalize:bool) -> None:
-        print(normalize)
+    def start_env(self) -> None:
+        self.env.start_model = self.model
+        self.env.init_sim()
 
     def defaultScreen(self):
         self._layout.setCurrentIndex(0)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.env.draw()

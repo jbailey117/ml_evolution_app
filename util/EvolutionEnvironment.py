@@ -6,7 +6,7 @@ import numpy as np
 import keras
 from multiprocessing import Pool
 from .Organism import Organism
-from .env_defaults import EPOCHS_PER_CYCLE, MIN_ORGANISMS, MAX_ORGANISMS, NEURON_ODDS, LAYER_ODDS, LEARNING_RATE
+from .Environment_Defaults import EPOCHS_PER_CYCLE, MIN_ORGANISMS, MAX_ORGANISMS, NEURON_ODDS, LAYER_ODDS, LEARNING_RATE
 #from Organism import Organism
 #from env_defaults import *
 
@@ -30,7 +30,7 @@ class EvolutionEnvironment:
 
     def init_sim(self) -> None:
         self.orgs.clear()
-        self.orgs.append(self.Organism(self.start_model, self, True))
+        self.orgs.append(self.Organism(self.start_model, self, clone=True))
         for i in range(1, self.min_org):
             self.orgs.append(self.Organism(self.orgs[i-1], self)) # type: ignore
         for _ in range(len(self.orgs), self.max_org):

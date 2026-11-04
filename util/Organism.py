@@ -11,7 +11,7 @@ from random import random
 if TYPE_CHECKING:
     from . import EvolutionEnvironment
 #from env_defaults import NEURON_ODDS, LAYER_ODDS
-from .env_defaults import NEURON_ODDS, LAYER_ODDS
+from .Environment_Defaults import NEURON_ODDS, LAYER_ODDS
 
 class Organism: 
     def __init__(self, parent:Union["Organism", keras.models.Sequential], env:"EvolutionEnvironment", clone:bool=False) -> None:
@@ -28,14 +28,13 @@ class Organism:
             model.set_weights(parent.get_weights())
             return model
         model = keras.models.Sequential()
-        model.add(parent.layers[0])
-        for i in range(1, len(parent.layers)):
+        for i in range(len(parent.layers)):
             weights = parent.layers[i].get_weights()
             seed = random()
-            if i and i < len(parent.layers)-2 and seed <= (self.env.evolve_odds['neuron'] if type(self.env) != NoneType else NEURON_ODDS):
+            if i < len(parent.layers)-1 and seed <= (self.env.evolve_odds['neuron'] if type(self.env) != NoneType else NEURON_ODDS):
                 weights = self.add_neuron(weights)
             layer = keras.layers.Dense(units=weights[0].shape[1], activation=parent.layers[i].activation)
-            input_shape = model.layers[-1].get_weights()[0].shape[1]
+            input_shape = model.layers[-1].get_weights()[0].shape[1] if i else parent.layers[i].get_weights()[0].shape[0]
             layer.build(input_shape=(None, input_shape))
             if weights[0].shape[0] < input_shape:
                 weights = self.add_weight(weights)
@@ -62,7 +61,7 @@ class Organism:
     def add_neuron(self, weights:list[np.ndarray]) -> list[np.ndarray]:
         new_weights = list([np.array([np.zeros(weights[0].shape[1]+1) for _ in range(weights[0].shape[0])]), weights[1]])
         for i in range(weights[0].shape[0]):
-            new_weights[0][i] = np.append(weights[0][i], random())
+            new_weights[0][i] = np.append(weights[0][i], 2 * (random()-0.5))
             #new_weights[0][i] = np.append(weights[0][i], 0.)
         new_weights[1] = np.append(new_weights[1], new_weights[1][int(random() * len(new_weights[1]))])
         #new_weights[1] = np.append(new_weights[1], 0.)
@@ -70,7 +69,7 @@ class Organism:
 
     def add_weight(self, weights:list[np.ndarray]) -> list[np.ndarray]:
         old_shape = weights[0].shape
-        weights[0] = np.append(weights[0], (np.array([random() for _ in range(old_shape[1])])))
+        weights[0] = np.append(weights[0], (np.array([2 * (random()-0.5) for _ in range(old_shape[1])])))
         weights[0] = weights[0].reshape(old_shape[0]+1, old_shape[1])
         return weights
     
