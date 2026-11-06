@@ -1,3 +1,3 @@
 from .CSVHandlers import CSVPreview
 from .FileWidgets import FileList, DataEditWidget
-from .EvolutionWidgets import OrganismGUI, EvolutionEnvironmentGUI
+from .EvolutionWidgets import OrganismGUI, EvolutionEnvironmentGUI, EnvConfigMenu

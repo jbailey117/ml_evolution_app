@@ -271,10 +271,7 @@ class AdjustDialog(QDialog):
 
         self.b_value = QLineEdit()
         self.b_value.setPlaceholderText("Enter value for b")
-        validator = QDoubleValidator()
-        validator.setBottom(-10000.0)
-        validator.setTop(10000.0)
-        validator.setDecimals(4)
+        validator = QDoubleValidator(top=10000, bottom=-10000, decimals=4)
         self.b_value.setValidator(validator)
         layout.addWidget(self.b_value)
 

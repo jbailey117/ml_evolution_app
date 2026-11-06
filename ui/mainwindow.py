@@ -1,26 +1,30 @@
 from PySide6.QtWidgets import (
+    QGraphicsSceneMouseEvent,
     QMainWindow,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
     QStackedLayout,
     QWidget,
+    QGraphicsProxyWidget,
 )
 from PySide6.QtCore import (
     Qt,
     QSize,
+    QThread,
+    QThreadPool,
+    QPointF,
 )
 from PySide6.QtGui import (
-    QPixmap,
     QFont,
     QAction,
-    QPainter,
-    QResizeEvent
+    QResizeEvent,
+    QShowEvent,
+    QPixmap,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from .widgets import (
     DataEditWidget,
-    OrganismGUI,
     EvolutionEnvironmentGUI,
 )
 import pandas as pd
@@ -28,11 +32,15 @@ import pandas as pd
 import keras
 import numpy as np
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .widgets import EnvConfigMenu
+
 class MainWindow(QMainWindow):
     def __init__(self, size:QSize):
         super().__init__()
         self.setMaximumSize(size)
-        self.setMinimumSize(480, 270)
+        self.setMinimumSize(1600, 800)
         self.container = QWidget()
         self._layout = QStackedLayout(self.container)
         self.model:keras.models.Sequential = keras.Sequential(layers=[
@@ -55,7 +63,6 @@ class MainWindow(QMainWindow):
         map = QGraphicsPixmapItem()
         map.setPos(0,0)
 
-
         view = QGraphicsView()
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -64,13 +71,19 @@ class MainWindow(QMainWindow):
         view.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         view.setViewportMargins(0,0,0,0)
 
-        env = EvolutionEnvironmentGUI(map, view, self.maximumSize(), self.model, np.array([1, 2]), np.array([1, 2]), min_org=8)
+        env = EvolutionEnvironmentGUI(map, view, QSize(1, 1), self.model, np.array([[1,2,3,4,5,6,7,8],[9,10,11,12,13,14,15,16]]), np.array([1, 0]), min_org=2, epochs_per_cycle=10)
 
         scene = QGraphicsScene()
         view.setScene(scene)
         scene.addItem(map)
 
         return env, map, scene, view
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self.env.pixmap = QPixmap(self.view.size())
+        self.env.pixmap.fill(Qt.GlobalColor.black)
+        self.map.setPixmap(self.env.pixmap)
 
     def initialize_menu(self) -> None:
         font = "Serif"
@@ -111,11 +124,32 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
 
         file_menu.setFont(subfont)
+        self.file_menu = file_menu
 
-        # start evolution
-        start_env = QAction('Start', self)
-        start_env.triggered.connect(self.start_env)
-        file_menu.addAction(start_env)
+        ### Simulation section of menu bar ###
+        ######################################
+        sim_menu = menu.addMenu('&Simulation')
+
+        # config env
+        config_env = QAction('Configure', self)
+        config_env.triggered.connect(self.config_env)
+        sim_menu.addAction(config_env)
+        sim_menu.addSeparator()
+
+        # start env
+        init_env = QAction('Initialize', self)
+        init_env.triggered.connect(self.init_env)
+        sim_menu.addAction(init_env)
+        sim_menu.addSeparator()
+
+        # run env
+        run_env = QAction('Run', self)
+        run_env.triggered.connect(self.run_env)
+        run_env.setDisabled(True)
+        sim_menu.addAction(run_env)
+
+        sim_menu.setFont(subfont)
+        self.sim_menu = sim_menu
 
     def new(self) -> None:
         print("creating new instance")
@@ -134,13 +168,81 @@ class MainWindow(QMainWindow):
     def export_model(self) -> None:
         print("exporting model....")
 
-    def start_env(self) -> None:
+    def config_env(self) -> None:
+        config_menu = self.make_config_menu()
+        proxy = self.ConfigProxyItem()
+        proxy.setWidget(config_menu)
+        self.sim_menu.actions()[0].setDisabled(True)
+        self.sim_menu.actions()[2].setDisabled(True)
+        config_menu.connect(lambda: self.scene.removeItem(proxy))
+        config_menu.connect(lambda: self.sim_menu.actions()[0].setDisabled(False))
+        config_menu.connect(lambda: self.sim_menu.actions()[2].setDisabled(False))
+        if self.sim_menu.actions()[4].isEnabled():
+            self.sim_menu.actions()[4].setDisabled(True)
+            config_menu.connect(lambda: self.sim_menu.actions()[4].setDisabled(False))
+        self.scene.addItem(proxy)
+
+    def init_env(self) -> None:
         self.env.start_model = self.model
         self.env.init_sim()
+        self.sim_menu.actions()[4].setDisabled(False)
+
+    def run_env(self) -> None:
+        self.env.cycle()
 
     def defaultScreen(self):
         self._layout.setCurrentIndex(0)
 
+    def make_config_menu(self) -> "EnvConfigMenu":
+        widget = self.env.make_config_menu(parent=self)
+        return widget
+
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.env.draw()
+
+    class ConfigProxyItem(QGraphicsProxyWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self.setFlag(QGraphicsProxyWidget.GraphicsItemFlag.ItemIsMovable)
+            self.setFlag(QGraphicsProxyWidget.GraphicsItemFlag.ItemIsSelectable)
+
+            self.drag_start:QPointF
+            self.is_dragging = False
+
+        def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+            super().mousePressEvent(event)
+
+            if not event.isAccepted():
+                print('accepting')
+                event.setAccepted(True)
+                self.drag_start = event.pos()
+                self.is_dragging = True
+                super(QGraphicsProxyWidget, self).mousePressEvent(event)
+
+        def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+            if self.is_dragging:
+                new_pos = self.pos() + event.pos() - self.drag_start
+
+                rect = self.scene().sceneRect()
+                new_x = new_pos.x()
+                if new_x > rect.width() - self.rect().width():
+                    new_x = rect.width() - self.rect().width()
+                elif new_x < 0:
+                    new_x = 0
+                new_y = new_pos.y()
+                if new_y > rect.height() - self.rect().height():
+                    new_y = rect.height() - self.rect().height()
+                elif new_y < rect.top():
+                    new_y = rect.top()
+                self.setPos(QPointF(new_x, new_y))
+                event.setAccepted(True)
+            else:
+                super().mouseMoveEvent(event)
+
+        def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+            if self.is_dragging:
+                self.is_dragging = False
+                event.setAccepted(True)
+            else:
+                super().mouseReleaseEvent(event)

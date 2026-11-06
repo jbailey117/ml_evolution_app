@@ -7,6 +7,6 @@ EPOCHS_PER_CYCLE:int = 100 # how many epochs to run on each organism before each
 # Organism values
 NEURON_ODDS:float = .5 # odds for adding a new neuron to a layer
 NEURON_IMMUNITY:int = 1 # rounds an organism is immune to death when born with extra neuron
-LAYER_ODDS:float = 0.00 # odds for creating a new layer within a network
+LAYER_ODDS:float = 0.05 # odds for creating a new layer within a network
 LAYER_IMMUNITY:int = 3 # rounds an organism is immune to death when born with extra layer
 LEARNING_RATE:float = 0.005 # learning rate for model training
