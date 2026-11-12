@@ -19,8 +19,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from PySide6.QtCore import (
+    QObject,
     QSize,
     QRectF,
+    QThread,
+    QThreadPool,
+    Signal,
 )
 from PySide6.QtGui import (
     QColor,
@@ -118,6 +122,7 @@ class EvolutionEnvironmentGUI(EvolutionEnvironment):
         self.orgs:list[Union[OrganismGUI, NoneType]]
         self.map = map
         self.view = view
+        self.threads = []
         self.pixmap = QPixmap(size)
         self.pixmap.fill(Qt.GlobalColor.black)
         map.setPixmap(self.pixmap)
@@ -131,13 +136,41 @@ class EvolutionEnvironmentGUI(EvolutionEnvironment):
                 continue
         self.draw()
 
-    def cycle(self):
-        self.losses = super().cycle()
-        self.draw()
+    def cycle(self, *callbacks):
+        self.callback = callbacks
+        self.losses:np.ndarray = np.zeros(shape=(len(self.orgs),))
+        
+        # train each model
+        for i, org in enumerate(self.orgs):
+            if org == None:
+                self.losses[i] = -1
+                continue
+            thread = self.CycleThread(i, self)
+            thread.progress.connect(self.update_weights)
+            thread.finished.connect(lambda t=thread: self._clean_thread(t))
+            thread.finished.connect(thread.deleteLater)
+            thread.start()
+            self.threads.append(thread)
 
     def get_viable_orgs(self, losses: np.ndarray[tuple[Any, ...], np.dtype[Any]]) -> tuple[np.ndarray[tuple[Any, ...], np.dtype[Any]], np.ndarray[tuple[Any, ...], np.dtype[Any]]]:
         self.parents, self.deaths = super().get_viable_orgs(losses)
         return self.parents, self.deaths
+
+    def update_weights(self, i:int, weights:list[np.ndarray]) -> None:
+        if self.orgs[i] == None:
+            return
+        self.orgs[i].model.set_weights(weights) # type: ignore
+        self.losses[i] = self.orgs[i].model.evaluate(self.x_test, self.y_test, batch_size=24)[0] # type: ignore
+
+    def _clean_thread(self, thread:"CycleThread") -> None:
+        self.threads.remove(thread)
+        if len(self.threads) == 0:
+            # get list of models in order of test set, then "kill" bad models and "birth" new models from best models once each training thread is done
+            parents, deaths = self.get_viable_orgs(self.losses)
+            self.get_new_generation(parents, deaths)
+            self.draw()
+            for callback in self.callback:
+                callback()
 
     def draw(self) -> None:
         self.pixmap = QPixmap(self.view.size())
@@ -181,7 +214,6 @@ class EvolutionEnvironmentGUI(EvolutionEnvironment):
         painter.end()
         self.map.setPixmap(self.pixmap)
 
-
     def draw_borders(self, painter:QPainter) -> None:
         border_pen = QPen(Qt.GlobalColor.gray)
         border_pen.setWidth(3)
@@ -196,6 +228,21 @@ class EvolutionEnvironmentGUI(EvolutionEnvironment):
 
     def make_config_menu(self, callback:Callable=None, parent=None) -> "EnvConfigMenu": # type: ignore
         return EnvConfigMenu(self, callback=callback, parent=parent)
+
+    class CycleThread(QThread):
+        progress = Signal(int, object)
+
+        def __init__(self, i, env:"EvolutionEnvironmentGUI") -> None:
+            super().__init__()
+            self.i = i
+            self.env = env
+
+        def run(self) -> None:
+            model = keras.models.Sequential.from_config(self.env.orgs[self.i].model.get_config())
+            model.compile(optimizer=keras.optimizers.Adam(learning_rate=self.env.learning_rate), loss=self.env.loss, metrics=['Accuracy'])
+            model.fit(self.env.x_train, self.env.y_train, batch_size=self.env.batch_size, epochs=self.env.epochs_per_cycle)
+            self.progress.emit(self.i, model.get_weights())
+
 
 class EnvConfigMenu(QWidget):
     def __init__(self, env:EvolutionEnvironmentGUI, callback:Callable=None, parent=None): # type: ignore
@@ -219,7 +266,7 @@ class EnvConfigMenu(QWidget):
         layout.addWidget(self.add_label(self.test_size, "Test Size", font))
 
         # Epochs per Cycle
-        self.epochs_per_cycle = self.make_line_edit("Epochs/Cycle", self.env.epochs_per_cycle, font, QIntValidator(bottom=1))
+        self.epochs_per_cycle = self.make_line_edit("Epochs/Cycle", self.env.epochs_per_cycle, font, QIntValidator(bottom=1, top=10000))
         layout.addWidget(self.add_label(self.epochs_per_cycle, "Epochs/Cycle", font))
 
         # Batch Size

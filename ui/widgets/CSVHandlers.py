@@ -23,21 +23,26 @@ from PySide6.QtGui import (
     QDoubleValidator,
 )
 import pandas as pd
+from functools import wraps
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from typing import Any
 from util import DataLoader
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from . import DataEditWidget
 
 class CSVPreview(QWidget):
-    def __init__(self, parent, data:pd.DataFrame):
+    def __init__(self, parent:"DataEditWidget", data:pd.DataFrame):
         super().__init__(parent)
+        self._parent=parent
         layout = QVBoxLayout()
 
         self.table_model = CSVTable(self, data)
         self.table_view = QTableView()
 
         self.graph_header = CSVGraphHeader(self)
-        self.dataloader = DialogDataLoader(data, self.table_model, self.table_view, self.graph_header)
+        self.dataloader = DialogDataLoader(data, self.table_model, self.table_view, self.graph_header, lambda: self._parent.setSaved(False))
         layout.addWidget(self.graph_header)
 
         header = self.table_view.horizontalHeader()
@@ -55,7 +60,7 @@ class CSVPreview(QWidget):
 
     def preview_file(self, data:pd.DataFrame):
         self.table_model.change_data(data)
-        self.dataloader = DialogDataLoader(self.table_model._data, self.table_model, self.table_view, self.graph_header)
+        self.dataloader = DialogDataLoader(self.table_model._data, self.table_model, self.table_view, self.graph_header, lambda: self._parent.setSaved(False))
         self.update()
         self.graph_header.make_column_graphs()
 
@@ -287,12 +292,21 @@ class AdjustDialog(QDialog):
         self.adjustment = [self.function_list.currentItem().text(), self.b_value.text() if self.b_value.text() != "" else "0"]
         self.accept()
 
+def callback_wrapper(func):
+    @wraps(func)
+    def wrapper(self, *args):
+        func(self, *args)
+        if self.callback:
+            self.callback()
+    return wrapper
+
 class DialogDataLoader(DataLoader):
-    def __init__(self, dataset:pd.DataFrame, table:CSVTable, view:QTableView, header:CSVGraphHeader):
+    def __init__(self, dataset:pd.DataFrame, table:CSVTable, view:QTableView, header:CSVGraphHeader, callback=None):
         super().__init__(dataset)
         self.table = table
         self.view = view
         self.header = header
+        self.callback = callback
 
     def update_header(self, columns:set[str]) -> None:
         column_names = self.data.columns.to_list()
@@ -300,16 +314,18 @@ class DialogDataLoader(DataLoader):
             idx = column_names.index(column)
             self.header.graphs[idx].hist(self.data[column])
 
-    def update_table(self, columns:set[str]=set()):
+    def update_table(self, columns:set[str]=set()) -> None:
         self.table.change_data(self.data)
         if len(columns) == 0:
             columns = set(self.data.columns.to_list())
         self.update_header(columns)
-        
+
+    @callback_wrapper
     def normalize(self, columns:set[str]) -> None:
         super().normalize(columns)
         self.update_table(columns)
 
+    @callback_wrapper
     def remove_columns(self, columns: set[str]) -> None:
         column_names = self.table._data.columns.to_list()
         cols = [column_names.index(column) for column in columns]
@@ -318,15 +334,18 @@ class DialogDataLoader(DataLoader):
         self.view.parent().update() # type: ignore
         self.header.remove_graphs(cols)
 
+    @callback_wrapper
     def adjust_columns(self, columns:set[str], adjustment: str, b: str) -> None:
         super().adjust_columns(columns, adjustment, b)
         self.update_table(columns)
 
+    @callback_wrapper
     def reset(self, columns: set[str]) -> None:
         super().reset(columns)
         self.update_table(columns)
 
-    def undo(self):
+    @callback_wrapper
+    def undo(self) -> None:
         super().undo()
         self.table.change_data(self.data)
         self.header.make_column_graphs()

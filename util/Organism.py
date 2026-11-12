@@ -29,17 +29,6 @@ class Organism:
             return model
         model = keras.models.Sequential()
         for i in range(len(parent.layers)):
-            # weights = parent.layers[i].get_weights()
-            # seed = random()
-            # if i < len(parent.layers)-1 and seed <= (self.env.evolve_odds['neuron'] if type(self.env) != NoneType else NEURON_ODDS):
-            #     weights = self.add_neuron(weights)
-            #     self.alive_turns += 1
-            # layer = keras.layers.Dense(units=weights[0].shape[1], activation=parent.layers[i].activation)
-            # input_shape = model.layers[-1].get_weights()[0].shape[1] if i else parent.layers[i].get_weights()[0].shape[0]
-            # layer.build(input_shape=(None, input_shape))
-            # if weights[0].shape[0] < input_shape:
-            #     weights = self.add_weight(weights)
-            # layer.set_weights(weights)
             layer = self.new_layer(
                 parent.layers[i],
                 input_shape=model.layers[-1].get_weights()[0].shape[1] if i else parent.layers[i].get_weights()[0].shape[0],

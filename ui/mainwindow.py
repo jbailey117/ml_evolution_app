@@ -11,8 +11,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Qt,
     QSize,
-    QThread,
-    QThreadPool,
     QPointF,
 )
 from PySide6.QtGui import (
@@ -26,8 +24,10 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from .widgets import (
     DataEditWidget,
     EvolutionEnvironmentGUI,
+    FileLoadDialog,
 )
 import pandas as pd
+from pathlib import Path
 
 import keras
 import numpy as np
@@ -52,10 +52,16 @@ class MainWindow(QMainWindow):
         ])
         self.env, self.map, self.scene, self.view = self.initialize_graphics()
         self._layout.addWidget(self.view)
+        self.dataEditor = DataEditWidget(self)
+        self._layout.addWidget(self.dataEditor)
 
         self.setCentralWidget(self.container)
 
         self.dataframes:dict[str, pd.DataFrame] = dict()
+        for file in Path("util/data").iterdir():
+            if not (file.is_file() or file.suffix != '.csv'):
+                continue
+            self.dataframes[file.name] = pd.read_csv(file)
 
         self.initialize_menu()
 
@@ -155,12 +161,7 @@ class MainWindow(QMainWindow):
         print("creating new instance")
 
     def load_data(self) -> None:
-        try:
-            dataEditor = DataEditWidget(self)
-            self._layout.addWidget(dataEditor) # type: ignore
-            self._layout.setCurrentIndex(1)
-        except TypeError:
-            pass
+        self.dataEditor.change_data(True)
 
     def import_model(self) -> None:
         print("Importing model....")
@@ -183,14 +184,23 @@ class MainWindow(QMainWindow):
         self.scene.addItem(proxy)
 
     def init_env(self) -> None:
+        dlg = FileLoadDialog(self, list(self.dataframes.keys()))
+        if not dlg.exec():
+            return
+        data = self.dataframes[dlg.file_list.selectedItems()[0].text() if len(dlg.file_list.selectedItems()) != 0 else dlg.file_list.item(0).text()]
+        y = data[data.columns[-1]].values
+        data = data.drop(columns=data.columns[-1]).values
+        self.env.x, self.env.y = data, y # type: ignore
         self.env.start_model = self.model
         self.env.init_sim()
         self.sim_menu.actions()[4].setDisabled(False)
 
     def run_env(self) -> None:
-        self.env.cycle()
+        self.sim_menu.actions()[4].setDisabled(True)
+        self.sim_menu.actions()[2].setDisabled(True)
+        self.env.cycle(lambda: self.sim_menu.actions()[4].setDisabled(False), lambda: self.sim_menu.actions()[2].setDisabled(False))
 
-    def defaultScreen(self):
+    def defaultScreen(self) -> None:
         self._layout.setCurrentIndex(0)
 
     def make_config_menu(self) -> "EnvConfigMenu":
@@ -214,7 +224,6 @@ class MainWindow(QMainWindow):
             super().mousePressEvent(event)
 
             if not event.isAccepted():
-                print('accepting')
                 event.setAccepted(True)
                 self.drag_start = event.pos()
                 self.is_dragging = True

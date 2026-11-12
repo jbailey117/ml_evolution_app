@@ -48,7 +48,7 @@ class EvolutionEnvironment:
         for _ in range(runs):
             self.cycle()
 
-    def cycle(self) -> np.ndarray:
+    def cycle(self) -> None:
         losses:np.ndarray = np.zeros(shape=(len(self.orgs),))
 
         # train each model
@@ -61,6 +61,9 @@ class EvolutionEnvironment:
 
         # get list of models in order of test set, then "kill" bad models and "birth" new models from best models
         parents, deaths = self.get_viable_orgs(losses)
+        self.get_new_generation(parents, deaths)
+
+    def get_new_generation(self, parents:np.ndarray, deaths:np.ndarray) -> None:
         for death in deaths:
             self.orgs[int(death)] = None
         for parent in parents:
@@ -71,7 +74,6 @@ class EvolutionEnvironment:
         for org in self.orgs:
             if org:
                 org.alive_turns -= 1
-        return losses
                 
     def cycle_parallel(self) -> None:
         tasks = [(self.x_train, self.y_train, self.epochs_per_cycle, org.model.get_config(), org.model.get_weights()) if type(org) != None else None for org in self.orgs] # type: ignore

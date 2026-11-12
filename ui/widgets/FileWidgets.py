@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     )
 from PySide6.QtGui import (
+    QCloseEvent,
     QFont,
     QShowEvent,
 )
@@ -152,15 +153,16 @@ class CloseDialog(QDialog):
 
         self.setLayout(layout)
 
+    def closeEvent(self, arg__1: QCloseEvent) -> None:
+        self.done(2)
+        arg__1.accept()
+
 class DataEditWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self._parent = parent
-        data = self.get_data()
-        if type(data) != pd.DataFrame:
-            return True
         self.setWindowTitle("View/Edit Data")
-        self.setMinimumSize(1000, 1000)
+        self.setMinimumSize(1000, parent.size().height()-100)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(5,5,5,5)
@@ -168,7 +170,7 @@ class DataEditWidget(QWidget):
         content_layout = QHBoxLayout()
 
         # csv preview window
-        self.csv_view = CSVPreview(self, data)
+        self.csv_view = CSVPreview(self, pd.DataFrame())
         content_layout.addWidget(self.csv_view)
 
         content_widget = QWidget()
@@ -191,6 +193,8 @@ class DataEditWidget(QWidget):
         buttonBox.setLayout(buttonlayout)
         layout.addWidget(buttonBox)
 
+        self.saved = True
+
         self.setLayout(layout)
 
     def showEvent(self, arg__1: QShowEvent) -> None:
@@ -205,15 +209,20 @@ class DataEditWidget(QWidget):
         else:
             return None
 
-    def change_data(self) -> None:
-        warn = QMessageBox.question(self, "Data not saved", "Would you like to save current data?")
-        if warn == QMessageBox.StandardButton.Yes:
-            if not self.save_data():
-                return
+    def change_data(self, new:bool=False) -> None:
+        if not (new or self.saved):
+            warn = QMessageBox.question(self, "Data not saved", "Would you like to save current data?")
+            if warn == QMessageBox.StandardButton.Yes:
+                if not self.save_data():
+                    return
         data = self.get_data()
         if type(data) != pd.DataFrame:
             return
         self.csv_view.preview_file(data)
+        self._parent._layout.setCurrentWidget(self) # type: ignore
+
+    def setSaved(self, saved:bool=True) -> None:
+        self.saved = saved
 
     def save_data(self) -> bool:
         dlg = SaveData(self)
@@ -224,15 +233,18 @@ class DataEditWidget(QWidget):
                 if warn != QMessageBox.StandardButton.Yes:
                     return False
             self._parent.dataframes[dlg.name] = self.csv_view.table_model._data # type: ignore
+            self.setSaved()
             return True
         return False
 
     def close_button(self) -> None:
-        dlg = CloseDialog(self)
-        dlg.setWindowModality(Qt.WindowModality.WindowModal)
-        if dlg.exec():
-            if not self.save_data():
+        if not self.saved:
+            dlg = CloseDialog(self)
+            dlg.setWindowModality(Qt.WindowModality.WindowModal)
+            result = dlg.exec()
+            if result == 1:
+                if not self.save_data():
+                    return
+            elif result != 0:
                 return
-        self.deleteLater()
         self._parent.defaultScreen() # type: ignore
-        self._parent._layout.removeWidget(self) # type: ignore
